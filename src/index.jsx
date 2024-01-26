@@ -1,47 +1,118 @@
 import { h, render, Component } from 'preact';
 import * as cornerstone from '@cornerstonejs/core';
+import { volumeLoader } from '@cornerstonejs/core';
 import dicomParser from 'dicom-parser';
 import { api } from 'dicomweb-client';
 import dcmjs from 'dcmjs';
 import cornerstoneDICOMImageLoader from '@cornerstonejs/dicom-image-loader';
+import {
+	cornerstoneStreamingImageVolumeLoader,
+	cornerstoneStreamingDynamicImageVolumeLoader,
+} from '@cornerstonejs/streaming-image-volume-loader';
 
 class App extends Component {
 	async componentDidMount() {
 		await cornerstone.init();
 		this.initCornerstoneDICOMImageLoader();
+		this.initVolumeLoader();
 
-		// Get Cornerstone imageIds and fetch metadata into RAM
-		const imageIds = await this.createImageIdsAndCacheMetaData({
-		  StudyInstanceUID:
-		    '1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463',
-		  SeriesInstanceUID:
-		    '1.3.6.1.4.1.14519.5.2.1.7009.2403.226151125820845824875394858561',
-		  wadoRsRoot: 'https://d3t6nz73ql33tx.cloudfront.net/dicomweb',
-		});
 
-		const content = document.getElementById('content');
-		const element = document.createElement('div');
+// Get Cornerstone imageIds and fetch metadata into RAM
+// const imageIds = await this.createImageIdsAndCacheMetaData({
+//   StudyInstanceUID:
+//     '1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463',
+//   SeriesInstanceUID:
+//     '1.3.6.1.4.1.14519.5.2.1.7009.2403.226151125820845824875394858561',
+//   wadoRsRoot: 'https://d3t6nz73ql33tx.cloudfront.net/dicomweb',
+// });
 
-		element.style.width = '500px';
-		element.style.height = '500px';
+const imageIds = [
+	'wadouri:/test.dcm',
+];
 
-		content.appendChild(element);
-		const renderingEngineId = 'myRenderingEngine';
-		const renderingEngine = new cornerstone.RenderingEngine(renderingEngineId);
-		const viewportId = 'CT_AXIAL_STACK';
+const content = document.getElementById('content');
 
-		const viewportInput = {
-		  viewportId,
-		  element,
-		  type: cornerstone.Enums.ViewportType.STACK,
-		};
+const viewportGrid = document.createElement('div');
+viewportGrid.style.display = 'flex';
+viewportGrid.style.flexDirection = 'row';
 
-		renderingEngine.enableElement(viewportInput);
-		const viewport = renderingEngine.getViewport(viewportId);
+// element for axial view
+const element1 = document.createElement('div');
+element1.style.width = '500px';
+element1.style.height = '500px';
 
-		viewport.setStack(imageIds, 60);
+// element for sagittal view
+const element2 = document.createElement('div');
+element2.style.width = '500px';
+element2.style.height = '500px';
 
-		viewport.render();
+viewportGrid.appendChild(element1);
+viewportGrid.appendChild(element2);
+
+content.appendChild(viewportGrid);
+
+const renderingEngineId = 'myRenderingEngine';
+const renderingEngine = new cornerstone.RenderingEngine(renderingEngineId);
+
+// note we need to add the cornerstoneStreamingImageVolume: to
+// use the streaming volume loader
+const volumeId = 'cornerstoneStreamingImageVolume: myVolume';
+
+// Define a volume in memory
+const volume = await volumeLoader.createAndCacheVolume(volumeId, {
+  imageIds,
+});
+
+const viewportId1 = 'CT_AXIAL';
+const viewportId2 = 'CT_SAGITTAL';
+
+const viewportInput = [
+  {
+    viewportId: viewportId1,
+    element: element1,
+    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
+    defaultOptions: {
+      orientation: cornerstone.Enums.OrientationAxis.AXIAL,
+    },
+  },
+  {
+    viewportId: viewportId2,
+    element: element2,
+    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
+    defaultOptions: {
+      orientation: cornerstone.Enums.OrientationAxis.SAGITTAL,
+    },
+  },
+];
+
+renderingEngine.setViewports(viewportInput);
+
+// Set the volume to load
+volume.load();
+
+cornerstone.setVolumesForViewports(
+  renderingEngine,
+  [{ volumeId }],
+  [viewportId1, viewportId2]
+);
+
+// Render the image
+renderingEngine.renderViewports([viewportId1, viewportId2]);
+
+	}
+
+	initVolumeLoader() {
+		volumeLoader.registerUnknownVolumeLoader(
+			cornerstoneStreamingImageVolumeLoader
+		);
+		volumeLoader.registerVolumeLoader(
+			'cornerstoneStreamingImageVolume',
+			cornerstoneStreamingImageVolumeLoader
+		);
+		volumeLoader.registerVolumeLoader(
+			'cornerstoneStreamingDynamicImageVolume',
+			cornerstoneStreamingDynamicImageVolumeLoader
+		);
 	}
 
 
@@ -78,6 +149,11 @@ class App extends Component {
 	}
 
 
+	/*
+	 * This function just finds a bunch of instances given the input
+	 * params and returns a list of direct URLs (it may also cache their
+	 * data). It doesn't do anything else!
+	 */
 	async createImageIdsAndCacheMetaData({
 	  StudyInstanceUID,
 	  SeriesInstanceUID,
