@@ -16,88 +16,77 @@ class App extends Component {
 		this.initCornerstoneDICOMImageLoader();
 		this.initVolumeLoader();
 
+	// up to 115
+	const imageIds = this.getTestImageIds();
 
-// Get Cornerstone imageIds and fetch metadata into RAM
-// const imageIds = await this.createImageIdsAndCacheMetaData({
-//   StudyInstanceUID:
-//     '1.3.6.1.4.1.14519.5.2.1.7009.2403.334240657131972136850343327463',
-//   SeriesInstanceUID:
-//     '1.3.6.1.4.1.14519.5.2.1.7009.2403.226151125820845824875394858561',
-//   wadoRsRoot: 'https://d3t6nz73ql33tx.cloudfront.net/dicomweb',
-// });
+	const content = document.getElementById('content');
 
-const imageIds = [
-	'wadouri:/test.dcm',
-];
+	const viewportGrid = document.createElement('div');
+	viewportGrid.style.display = 'flex';
+	viewportGrid.style.flexDirection = 'row';
 
-const content = document.getElementById('content');
+	// element for axial view
+	const element1 = document.createElement('div');
+	element1.style.width = '500px';
+	element1.style.height = '500px';
 
-const viewportGrid = document.createElement('div');
-viewportGrid.style.display = 'flex';
-viewportGrid.style.flexDirection = 'row';
+	// element for sagittal view
+	const element2 = document.createElement('div');
+	element2.style.width = '500px';
+	element2.style.height = '500px';
 
-// element for axial view
-const element1 = document.createElement('div');
-element1.style.width = '500px';
-element1.style.height = '500px';
+	viewportGrid.appendChild(element1);
+	viewportGrid.appendChild(element2);
 
-// element for sagittal view
-const element2 = document.createElement('div');
-element2.style.width = '500px';
-element2.style.height = '500px';
+	content.appendChild(viewportGrid);
 
-viewportGrid.appendChild(element1);
-viewportGrid.appendChild(element2);
+	const renderingEngineId = 'myRenderingEngine';
+	const renderingEngine = new cornerstone.RenderingEngine(renderingEngineId);
 
-content.appendChild(viewportGrid);
+	// note we need to add the cornerstoneStreamingImageVolume: to
+	// use the streaming volume loader
+	const volumeId = 'cornerstoneStreamingImageVolume: myVolume';
 
-const renderingEngineId = 'myRenderingEngine';
-const renderingEngine = new cornerstone.RenderingEngine(renderingEngineId);
+	// Define a volume in memory
+	const volume = await volumeLoader.createAndCacheVolume(volumeId, {
+	  imageIds,
+	});
 
-// note we need to add the cornerstoneStreamingImageVolume: to
-// use the streaming volume loader
-const volumeId = 'cornerstoneStreamingImageVolume: myVolume';
+	const viewportId1 = 'CT_AXIAL';
+	const viewportId2 = 'CT_SAGITTAL';
 
-// Define a volume in memory
-const volume = await volumeLoader.createAndCacheVolume(volumeId, {
-  imageIds,
-});
+	const viewportInput = [
+	  {
+	    viewportId: viewportId1,
+	    element: element1,
+	    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
+	    defaultOptions: {
+	      orientation: cornerstone.Enums.OrientationAxis.AXIAL,
+	    },
+	  },
+	  {
+	    viewportId: viewportId2,
+	    element: element2,
+	    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
+	    defaultOptions: {
+	      orientation: cornerstone.Enums.OrientationAxis.SAGITTAL,
+	    },
+	  },
+	];
 
-const viewportId1 = 'CT_AXIAL';
-const viewportId2 = 'CT_SAGITTAL';
+	renderingEngine.setViewports(viewportInput);
 
-const viewportInput = [
-  {
-    viewportId: viewportId1,
-    element: element1,
-    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
-    defaultOptions: {
-      orientation: cornerstone.Enums.OrientationAxis.AXIAL,
-    },
-  },
-  {
-    viewportId: viewportId2,
-    element: element2,
-    type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
-    defaultOptions: {
-      orientation: cornerstone.Enums.OrientationAxis.SAGITTAL,
-    },
-  },
-];
+	// Set the volume to load
+	volume.load();
 
-renderingEngine.setViewports(viewportInput);
+	cornerstone.setVolumesForViewports(
+	  renderingEngine,
+	  [{ volumeId }],
+	  [viewportId1, viewportId2]
+	);
 
-// Set the volume to load
-volume.load();
-
-cornerstone.setVolumesForViewports(
-  renderingEngine,
-  [{ volumeId }],
-  [viewportId1, viewportId2]
-);
-
-// Render the image
-renderingEngine.renderViewports([viewportId1, viewportId2]);
+	// Render the image
+	renderingEngine.renderViewports([viewportId1, viewportId2]);
 
 	}
 
@@ -148,57 +137,124 @@ renderingEngine.renderViewports([viewportId1, viewportId2]);
 	  cornerstoneDICOMImageLoader.webWorkerManager.initialize(config);
 	}
 
-
-	/*
-	 * This function just finds a bunch of instances given the input
-	 * params and returns a list of direct URLs (it may also cache their
-	 * data). It doesn't do anything else!
-	 */
-	async createImageIdsAndCacheMetaData({
-	  StudyInstanceUID,
-	  SeriesInstanceUID,
-	  SOPInstanceUID = null,
-	  wadoRsRoot,
-	  client = null,
-	}) {
-	  const SOP_INSTANCE_UID = '00080018';
-	  const SERIES_INSTANCE_UID = '0020000E';
-	  const MODALITY = '00080060';
-
-	  const studySearchOptions = {
-	    studyInstanceUID: StudyInstanceUID,
-	    seriesInstanceUID: SeriesInstanceUID,
-	  };
-
-	  client = client || new api.DICOMwebClient({ url: wadoRsRoot });
-	  const instances = await client.retrieveSeriesMetadata(studySearchOptions);
-	  const modality = instances[0][MODALITY].Value[0];
-	  let imageIds = instances.map((instanceMetaData) => {
-	    const SeriesInstanceUID = instanceMetaData[SERIES_INSTANCE_UID].Value[0];
-	    const SOPInstanceUIDToUse =
-	      SOPInstanceUID || instanceMetaData[SOP_INSTANCE_UID].Value[0];
-
-	    const prefix = 'wadors:';
-
-	    const imageId =
-	      prefix +
-	      wadoRsRoot +
-	      '/studies/' +
-	      StudyInstanceUID +
-	      '/series/' +
-	      SeriesInstanceUID +
-	      '/instances/' +
-	      SOPInstanceUIDToUse +
-	      '/frames/1';
-
-	    cornerstoneDICOMImageLoader.wadors.metaDataManager.add(
-	      imageId,
-	      instanceMetaData
-	    );
-	    return imageId;
-	  });
-
-	  return imageIds;
+	getTestImageIds() {
+		return [
+			'wadouri:/dicom/1-001.dcm',
+			'wadouri:/dicom/1-002.dcm',
+			'wadouri:/dicom/1-003.dcm',
+			'wadouri:/dicom/1-004.dcm',
+			'wadouri:/dicom/1-005.dcm',
+			'wadouri:/dicom/1-006.dcm',
+			'wadouri:/dicom/1-007.dcm',
+			'wadouri:/dicom/1-008.dcm',
+			'wadouri:/dicom/1-009.dcm',
+			'wadouri:/dicom/1-010.dcm',
+			'wadouri:/dicom/1-011.dcm',
+			'wadouri:/dicom/1-012.dcm',
+			'wadouri:/dicom/1-013.dcm',
+			'wadouri:/dicom/1-014.dcm',
+			'wadouri:/dicom/1-015.dcm',
+			'wadouri:/dicom/1-016.dcm',
+			'wadouri:/dicom/1-017.dcm',
+			'wadouri:/dicom/1-018.dcm',
+			'wadouri:/dicom/1-019.dcm',
+			'wadouri:/dicom/1-020.dcm',
+			'wadouri:/dicom/1-021.dcm',
+			'wadouri:/dicom/1-022.dcm',
+			'wadouri:/dicom/1-023.dcm',
+			'wadouri:/dicom/1-024.dcm',
+			'wadouri:/dicom/1-025.dcm',
+			'wadouri:/dicom/1-026.dcm',
+			'wadouri:/dicom/1-027.dcm',
+			'wadouri:/dicom/1-028.dcm',
+			'wadouri:/dicom/1-029.dcm',
+			'wadouri:/dicom/1-030.dcm',
+			'wadouri:/dicom/1-031.dcm',
+			'wadouri:/dicom/1-032.dcm',
+			'wadouri:/dicom/1-033.dcm',
+			'wadouri:/dicom/1-034.dcm',
+			'wadouri:/dicom/1-035.dcm',
+			'wadouri:/dicom/1-036.dcm',
+			'wadouri:/dicom/1-037.dcm',
+			'wadouri:/dicom/1-038.dcm',
+			'wadouri:/dicom/1-039.dcm',
+			'wadouri:/dicom/1-040.dcm',
+			'wadouri:/dicom/1-041.dcm',
+			'wadouri:/dicom/1-042.dcm',
+			'wadouri:/dicom/1-043.dcm',
+			'wadouri:/dicom/1-044.dcm',
+			'wadouri:/dicom/1-045.dcm',
+			'wadouri:/dicom/1-046.dcm',
+			'wadouri:/dicom/1-047.dcm',
+			'wadouri:/dicom/1-048.dcm',
+			'wadouri:/dicom/1-049.dcm',
+			'wadouri:/dicom/1-050.dcm',
+			'wadouri:/dicom/1-051.dcm',
+			'wadouri:/dicom/1-052.dcm',
+			'wadouri:/dicom/1-053.dcm',
+			'wadouri:/dicom/1-054.dcm',
+			'wadouri:/dicom/1-055.dcm',
+			'wadouri:/dicom/1-056.dcm',
+			'wadouri:/dicom/1-057.dcm',
+			'wadouri:/dicom/1-058.dcm',
+			'wadouri:/dicom/1-059.dcm',
+			'wadouri:/dicom/1-060.dcm',
+			'wadouri:/dicom/1-061.dcm',
+			'wadouri:/dicom/1-062.dcm',
+			'wadouri:/dicom/1-063.dcm',
+			'wadouri:/dicom/1-064.dcm',
+			'wadouri:/dicom/1-065.dcm',
+			'wadouri:/dicom/1-066.dcm',
+			'wadouri:/dicom/1-067.dcm',
+			'wadouri:/dicom/1-068.dcm',
+			'wadouri:/dicom/1-069.dcm',
+			'wadouri:/dicom/1-070.dcm',
+			'wadouri:/dicom/1-071.dcm',
+			'wadouri:/dicom/1-072.dcm',
+			'wadouri:/dicom/1-073.dcm',
+			'wadouri:/dicom/1-074.dcm',
+			'wadouri:/dicom/1-075.dcm',
+			'wadouri:/dicom/1-076.dcm',
+			'wadouri:/dicom/1-077.dcm',
+			'wadouri:/dicom/1-078.dcm',
+			'wadouri:/dicom/1-079.dcm',
+			'wadouri:/dicom/1-080.dcm',
+			'wadouri:/dicom/1-081.dcm',
+			'wadouri:/dicom/1-082.dcm',
+			'wadouri:/dicom/1-083.dcm',
+			'wadouri:/dicom/1-084.dcm',
+			'wadouri:/dicom/1-085.dcm',
+			'wadouri:/dicom/1-086.dcm',
+			'wadouri:/dicom/1-087.dcm',
+			'wadouri:/dicom/1-088.dcm',
+			'wadouri:/dicom/1-089.dcm',
+			'wadouri:/dicom/1-090.dcm',
+			'wadouri:/dicom/1-091.dcm',
+			'wadouri:/dicom/1-092.dcm',
+			'wadouri:/dicom/1-093.dcm',
+			'wadouri:/dicom/1-094.dcm',
+			'wadouri:/dicom/1-095.dcm',
+			'wadouri:/dicom/1-096.dcm',
+			'wadouri:/dicom/1-097.dcm',
+			'wadouri:/dicom/1-098.dcm',
+			'wadouri:/dicom/1-099.dcm',
+			'wadouri:/dicom/1-100.dcm',
+			'wadouri:/dicom/1-101.dcm',
+			'wadouri:/dicom/1-102.dcm',
+			'wadouri:/dicom/1-103.dcm',
+			'wadouri:/dicom/1-104.dcm',
+			'wadouri:/dicom/1-105.dcm',
+			'wadouri:/dicom/1-106.dcm',
+			'wadouri:/dicom/1-107.dcm',
+			'wadouri:/dicom/1-108.dcm',
+			'wadouri:/dicom/1-109.dcm',
+			'wadouri:/dicom/1-110.dcm',
+			'wadouri:/dicom/1-111.dcm',
+			'wadouri:/dicom/1-112.dcm',
+			'wadouri:/dicom/1-113.dcm',
+			'wadouri:/dicom/1-114.dcm',
+			'wadouri:/dicom/1-115.dcm',
+		];
 	}
 
 
